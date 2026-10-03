@@ -9,7 +9,8 @@ import java.io.File
 object ExtensionInjector {
 
     /**
-     * Builds the Chrome WebExtension compatibility layer and console interceptor.
+     * Builds the Chrome WebExtension compatibility layer, console interceptor,
+     * and network HTTP request capture hook.
      */
     fun buildPolyfillScript(): String {
         return """
@@ -48,6 +49,50 @@ object ExtensionInjector {
                         }
                     } catch(e) {}
                 };
+
+                // HTTP Fetch & XHR Network Logger Interceptor
+                try {
+                    const origFetch = window.fetch;
+                    window.fetch = async function(...args) {
+                        const url = (typeof args[0] === 'string') ? args[0] : (args[0] && args[0].url) || 'unknown';
+                        const options = args[1] || {};
+                        const method = (options.method || 'GET').toUpperCase();
+                        if (window.ExtenNativeBridge) {
+                            window.ExtenNativeBridge.postNetworkRequest(method, url, JSON.stringify(options.headers || {}));
+                        }
+                        try {
+                            const resp = await origFetch.apply(this, args);
+                            if (window.ExtenNativeBridge) {
+                                window.ExtenNativeBridge.postLog('NETWORK', 'Fetch (' + resp.status + ')', method + ' ' + url);
+                            }
+                            return resp;
+                        } catch(err) {
+                            if (window.ExtenNativeBridge) {
+                                window.ExtenNativeBridge.postLog('ERROR', 'Fetch Failed', method + ' ' + url + ' - ' + err.message);
+                            }
+                            throw err;
+                        }
+                    };
+
+                    const origXhrOpen = XMLHttpRequest.prototype.open;
+                    const origXhrSend = XMLHttpRequest.prototype.send;
+                    XMLHttpRequest.prototype.open = function(method, url) {
+                        this._reqMethod = method;
+                        this._reqUrl = url;
+                        return origXhrOpen.apply(this, arguments);
+                    };
+                    XMLHttpRequest.prototype.send = function(body) {
+                        if (window.ExtenNativeBridge && this._reqUrl) {
+                            window.ExtenNativeBridge.postNetworkRequest(this._reqMethod || 'GET', this._reqUrl, '');
+                        }
+                        this.addEventListener('load', function() {
+                            if (window.ExtenNativeBridge) {
+                                window.ExtenNativeBridge.postLog('NETWORK', 'XHR (' + this.status + ')', (this._reqMethod || 'GET') + ' ' + this._reqUrl);
+                            }
+                        });
+                        return origXhrSend.apply(this, arguments);
+                    };
+                } catch(e) {}
 
                 // WebExtension chrome/browser API shim
                 window.chrome = window.chrome || {};

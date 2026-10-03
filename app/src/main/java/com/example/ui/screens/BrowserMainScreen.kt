@@ -9,7 +9,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Scaffold
@@ -51,6 +50,7 @@ fun BrowserMainScreen(
     val bookmarks by viewModel.bookmarks.collectAsState()
     val history by viewModel.history.collectAsState()
     val consoleLogs by viewModel.consoleLogs.collectAsState()
+    val httpRequests by viewModel.httpRequests.collectAsState()
     val activePopupExtension by viewModel.activePopupExtension.collectAsState()
     val editingExtension by viewModel.editingExtension.collectAsState()
     val uiMessage by viewModel.uiMessage.collectAsState()
@@ -137,6 +137,9 @@ fun BrowserMainScreen(
                                         onAddConsoleLog = { logItem ->
                                             viewModel.addConsoleLog(logItem)
                                         },
+                                        onAddHttpRequest = { reqItem ->
+                                            viewModel.addHttpRequest(reqItem)
+                                        },
                                         onWebViewCreated = { webView ->
                                             activeWebView = webView
                                         }
@@ -203,7 +206,7 @@ fun BrowserMainScreen(
                                 viewModel.openExtensionEditor(ext)
                             },
                             onRestoreSampleGallery = {
-                                viewModel.restoreBuiltInExtensions()
+                                viewModel.clearAllSampleExtensions()
                             },
                             onNavigateBack = { currentScreen = CurrentScreen.BROWSER }
                         )
@@ -230,11 +233,13 @@ fun BrowserMainScreen(
                 }
             }
 
-            // DevTools Console Bottom Sheet
+            // DevTools Console & Network Request Bottom Sheet
             if (showConsoleSheet) {
                 DevToolsConsoleSheet(
                     logs = consoleLogs,
+                    httpRequests = httpRequests,
                     onClearLogs = { viewModel.clearConsoleLogs() },
+                    onClearHttpRequests = { viewModel.clearHttpRequests() },
                     onEvalJs = { expression ->
                         activeWebView?.evaluateJavascript(expression) { result ->
                             viewModel.addConsoleLog(
@@ -250,7 +255,7 @@ fun BrowserMainScreen(
                 )
             }
 
-            // Extension Action Popup Dialog
+            // Extension Action Popup Dialog (Full mobile responsive height)
             activePopupExtension?.let { ext ->
                 ExtensionPopupDialog(
                     extension = ext,

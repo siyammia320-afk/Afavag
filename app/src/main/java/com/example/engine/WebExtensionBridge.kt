@@ -7,16 +7,13 @@ import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.widget.Toast
 import com.example.data.model.ConsoleLogItem
+import com.example.data.model.HttpRequestItem
 import com.example.data.model.LogLevel
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.launch
 
 class WebExtensionBridge(
     private val context: Context,
-    private val onLogReceived: (ConsoleLogItem) -> Unit
+    private val onLogReceived: (ConsoleLogItem) -> Unit = {},
+    private val onHttpRequestCaptured: (HttpRequestItem) -> Unit = {}
 ) {
     private val prefs: SharedPreferences = context.getSharedPreferences("ext_storage_prefs", Context.MODE_PRIVATE)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -36,6 +33,17 @@ class WebExtensionBridge(
             message = message
         )
         onLogReceived(item)
+    }
+
+    @JavascriptInterface
+    fun postNetworkRequest(method: String, url: String, headersJson: String) {
+        val item = HttpRequestItem(
+            url = url,
+            method = method.uppercase(),
+            headers = emptyMap(),
+            isForMainFrame = false
+        )
+        onHttpRequestCaptured(item)
     }
 
     @JavascriptInterface

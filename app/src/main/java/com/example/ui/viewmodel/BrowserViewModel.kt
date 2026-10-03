@@ -12,6 +12,7 @@ import com.example.data.model.ConsoleLogItem
 import com.example.data.model.ContentScriptConfig
 import com.example.data.model.ExtensionEntity
 import com.example.data.model.HistoryEntity
+import com.example.data.model.HttpRequestItem
 import com.example.data.model.LogLevel
 import com.example.engine.ExtensionMatcher
 import com.example.engine.ExtensionParser
@@ -72,6 +73,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _consoleLogs = MutableStateFlow<List<ConsoleLogItem>>(emptyList())
     val consoleLogs: StateFlow<List<ConsoleLogItem>> = _consoleLogs.asStateFlow()
 
+    private val _httpRequests = MutableStateFlow<List<HttpRequestItem>>(emptyList())
+    val httpRequests: StateFlow<List<HttpRequestItem>> = _httpRequests.asStateFlow()
+
     private val _activePopupExtension = MutableStateFlow<ExtensionEntity?>(null)
     val activePopupExtension: StateFlow<ExtensionEntity?> = _activePopupExtension.asStateFlow()
 
@@ -111,7 +115,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun closeTab(tabId: String) {
         val currentList = _tabs.value
         if (currentList.size <= 1) {
-            // Keep at least one tab
             val resetTab = BrowserTab(
                 url = "https://www.google.com",
                 title = "Google"
@@ -145,7 +148,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 val newUrl = url ?: tab.url
                 if (url != null) {
                     _urlInput.value = url
-                    // Record history
                     recordHistory(newUrl, title ?: tab.title)
                 }
                 tab.copy(
@@ -179,12 +181,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             return trimmed
         }
 
-        // Check if it looks like a domain name
         if (trimmed.contains(".") && !trimmed.contains(" ") && trimmed.indexOf('.') < trimmed.length - 1) {
             return "https://$trimmed"
         }
 
-        // Otherwise perform search
         val query = URLEncoder.encode(trimmed, StandardCharsets.UTF_8.toString())
         return when (_searchEngine.value) {
             "DuckDuckGo" -> "https://duckduckgo.com/?q=$query"
@@ -266,7 +266,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             val ext = extensionDao.getExtensionById(id)
             val msg = if (isEnabled) "${ext?.name ?: "Extension"} enabled" else "${ext?.name ?: "Extension"} disabled"
             _uiMessage.value = msg
-            // Update active count for current tab
             currentTab.value?.let { tab ->
                 updateCurrentTabState(url = tab.url)
             }
@@ -276,7 +275,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun deleteExtension(extension: ExtensionEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Delete physical files
                 val dir = File(extension.installPath)
                 if (dir.exists()) {
                     dir.deleteRecursively()
@@ -285,6 +283,24 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 _uiMessage.value = "Removed ${extension.name}"
             } catch (e: Exception) {
                 _uiMessage.value = "Error removing extension: ${e.message}"
+            }
+        }
+    }
+
+    fun clearAllSampleExtensions() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val all = extensionDao.getAllExtensions()
+                // delete built-ins
+                val current = extensions.value.filter { it.isBuiltIn }
+                for (ext in current) {
+                    val dir = File(ext.installPath)
+                    if (dir.exists()) dir.deleteRecursively()
+                    extensionDao.delete(ext)
+                }
+                _uiMessage.value = "Cleared default sample extensions"
+            } catch (e: Exception) {
+                _uiMessage.value = "Error: ${e.message}"
             }
         }
     }
@@ -301,7 +317,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
                 val ext = ExtensionParser.installFromZip(context, inputStream)
                 extensionDao.insertOrUpdate(ext)
-                _uiMessage.value = "Successfully installed '${ext.name}' (v${ext.version})"
+                _uiMessage.value = "Successfully installed '${ext.name}'"
             } catch (e: Exception) {
                 e.printStackTrace()
                 _uiMessage.value = "Failed to import ZIP: ${e.localizedMessage ?: "Invalid format"}"
@@ -381,11 +397,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // --- DevTools Console Logs ---
+    // --- DevTools Console & Network Logs ---
 
     fun addConsoleLog(item: ConsoleLogItem) {
         val current = _consoleLogs.value.toMutableList()
-        current.add(0, item) // newest first
+        current.add(0, item)
         if (current.size > 400) {
             _consoleLogs.value = current.take(400)
         } else {
@@ -396,5 +412,20 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun clearConsoleLogs() {
         _consoleLogs.value = emptyList()
         _uiMessage.value = "Console logs cleared"
+    }
+
+    fun addHttpRequest(item: HttpRequestItem) {
+        val current = _httpRequests.value.toMutableList()
+        current.add(0, item)
+        if (current.size > 300) {
+            _httpRequests.value = current.take(300)
+        } else {
+            _httpRequests.value = current
+        }
+    }
+
+    fun clearHttpRequests() {
+        _httpRequests.value = emptyList()
+        _uiMessage.value = "Network requests cleared"
     }
 }

@@ -11,15 +11,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -35,9 +38,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.ExtensionEntity
 import com.example.engine.ExtensionInjector
 import com.example.engine.WebExtensionBridge
@@ -52,24 +55,31 @@ fun ExtensionPopupDialog(
     val context = LocalContext.current
     val popupFile = extension.popupRelativePath?.let { File(extension.installPath, it) }
 
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
+        )
+    ) {
+        Surface(
             modifier = Modifier
-                .fillMaxWidth()
-                .wrapContentHeight(),
+                .fillMaxWidth(0.95f)
+                .fillMaxHeight(0.88f)
+                .statusBarsPadding()
+                .navigationBarsPadding(),
             shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(8.dp)
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxSize()) {
                 // Header
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -82,7 +92,8 @@ fun ExtensionPopupDialog(
                         Text(
                             text = extension.name,
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1
                         )
                         Text(
                             text = "Extension Action Popup",
@@ -95,14 +106,13 @@ fun ExtensionPopupDialog(
                     }
                 }
 
-                // Popup Web Content
+                // Responsive Popup Web Content
                 if (popupFile != null && popupFile.exists()) {
                     Box(
                         modifier = Modifier
+                            .weight(1f)
                             .fillMaxWidth()
-                            .height(340.dp)
-                            .padding(8.dp)
-                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surface)
                     ) {
                         AndroidView(
                             factory = {
@@ -111,19 +121,42 @@ fun ExtensionPopupDialog(
                                         ViewGroup.LayoutParams.MATCH_PARENT,
                                         ViewGroup.LayoutParams.MATCH_PARENT
                                     )
+                                    isVerticalScrollBarEnabled = true
+                                    isHorizontalScrollBarEnabled = false
+
                                     settings.apply {
                                         javaScriptEnabled = true
                                         domStorageEnabled = true
+                                        databaseEnabled = true
                                         allowFileAccess = true
                                         allowContentAccess = true
+                                        useWideViewPort = true
+                                        loadWithOverviewMode = true
                                         mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                                     }
+
                                     val bridge = WebExtensionBridge(context) {}
                                     addJavascriptInterface(bridge, "ExtenNativeBridge")
 
                                     webViewClient = object : WebViewClient() {
                                         override fun onPageFinished(view: WebView?, url: String?) {
                                             super.onPageFinished(view, url)
+                                            // Ensure mobile responsive viewport injection if missing in popup HTML
+                                            val metaViewportFix = """
+                                                (function() {
+                                                    let meta = document.querySelector('meta[name="viewport"]');
+                                                    if (!meta) {
+                                                        meta = document.createElement('meta');
+                                                        meta.name = 'viewport';
+                                                        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=2.0';
+                                                        document.head.appendChild(meta);
+                                                    }
+                                                    document.body.style.minHeight = '100vh';
+                                                    document.body.style.boxSizing = 'border-box';
+                                                    document.body.style.overflowY = 'auto';
+                                                })();
+                                            """.trimIndent()
+                                            view?.evaluateJavascript(metaViewportFix, null)
                                             view?.evaluateJavascript(
                                                 ExtensionInjector.buildPolyfillScript(),
                                                 null
@@ -135,13 +168,13 @@ fun ExtensionPopupDialog(
                                     loadUrl("file://${popupFile.absolutePath}")
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
                 } else {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
+                            .fillMaxSize()
                             .padding(24.dp),
                         contentAlignment = Alignment.Center
                     ) {

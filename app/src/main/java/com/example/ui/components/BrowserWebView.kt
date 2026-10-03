@@ -25,6 +25,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.model.BrowserTab
 import com.example.data.model.ConsoleLogItem
 import com.example.data.model.ExtensionEntity
+import com.example.data.model.HttpRequestItem
 import com.example.data.model.LogLevel
 import com.example.engine.ExtensionInjector
 import com.example.engine.WebExtensionBridge
@@ -39,14 +40,17 @@ fun BrowserWebView(
     enabledExtensions: List<ExtensionEntity>,
     onUpdateTabState: (url: String?, title: String?, isLoading: Boolean?, progress: Int?, canGoBack: Boolean?, canGoForward: Boolean?) -> Unit,
     onAddConsoleLog: (ConsoleLogItem) -> Unit,
+    onAddHttpRequest: (HttpRequestItem) -> Unit = {},
     modifier: Modifier = Modifier,
     onWebViewCreated: (WebView) -> Unit = {}
 ) {
     val context = LocalContext.current
     val webExtensionBridge = remember {
-        WebExtensionBridge(context) { logItem ->
-            onAddConsoleLog(logItem)
-        }
+        WebExtensionBridge(
+            context = context,
+            onLogReceived = { logItem -> onAddConsoleLog(logItem) },
+            onHttpRequestCaptured = { reqItem -> onAddHttpRequest(reqItem) }
+        )
     }
 
     val webView = remember(tab.id) {
@@ -120,6 +124,26 @@ fun BrowserWebView(
             }
 
             webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(
+                    view: WebView?,
+                    request: WebResourceRequest?
+                ): WebResourceResponse? {
+                    if (request != null) {
+                        val urlStr = request.url.toString()
+                        val method = request.method ?: "GET"
+                        val headers = request.requestHeaders ?: emptyMap()
+                        onAddHttpRequest(
+                            HttpRequestItem(
+                                url = urlStr,
+                                method = method,
+                                headers = headers,
+                                isForMainFrame = request.isForMainFrame
+                            )
+                        )
+                    }
+                    return super.shouldInterceptRequest(view, request)
+                }
+
                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                     super.onPageStarted(view, url, favicon)
                     onUpdateTabState(
@@ -164,7 +188,7 @@ fun BrowserWebView(
                     handler: SslErrorHandler?,
                     error: SslError?
                 ) {
-                    // Proceed for demo/development flexibility
+                    // Proceed for development flexibility
                     handler?.proceed()
                 }
 
