@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">ExtenBrowser</string>
+    <string name="browser_search_placeholder">Search or enter web address</string>
+    <string name="extensions_title">Extensions</string>
+    <string name="tabs_title">Tabs</string>
+    <string name="bookmarks_title">Bookmarks</string>
+    <string name="history_title">History</string>
+    <string name="console_title">Console Logs</string>
+    <string name="import_extension_zip">Import Extension (.zip)</string>
+    <string name="create_extension">Create Extension</string>
+</resources>

@@ -1,0 +1,6 @@
+{
+  "name": "ExtenBrowser",
+  "description": "Android browser with WebExtension ZIP loading, UserScript injection, multi-tabs, and developer tools.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
