@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.filled.Http
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,8 +43,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -66,6 +68,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.example.data.model.ConsoleLogItem
 import com.example.data.model.HttpRequestItem
 import com.example.data.model.LogLevel
@@ -88,6 +91,7 @@ fun DevToolsConsoleSheet(
     var selectedFilter by remember { mutableStateOf<LogLevel?>(null) }
     var networkSearchQuery by remember { mutableStateOf("") }
     var jsInput by remember { mutableStateOf("") }
+    var selectedHttpRequest by remember { mutableStateOf<HttpRequestItem?>(null) }
     val timeFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
     val context = LocalContext.current
 
@@ -317,14 +321,168 @@ fun DevToolsConsoleSheet(
                                 HttpRequestRow(
                                     item = req,
                                     timeFormat = timeFormat,
-                                    onCopyUrl = {
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                        clipboard.setPrimaryClip(ClipData.newPlainText("URL", req.url))
-                                        Toast.makeText(context, "Copied URL to clipboard", Toast.LENGTH_SHORT).show()
-                                    }
+                                    onClick = { selectedHttpRequest = req }
                                 )
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // HTTP Request Detail Inspector Dialog
+    selectedHttpRequest?.let { req ->
+        HttpRequestDetailDialog(
+            item = req,
+            onDismiss = { selectedHttpRequest = null }
+        )
+    }
+}
+
+@Composable
+private fun HttpRequestDetailDialog(
+    item: HttpRequestItem,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val headersString = item.headers.entries.joinToString("\n") { "${it.key}: ${it.value}" }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(520.dp),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${item.method} Request Details",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    IconButton(onClick = onDismiss) {
+                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // URL
+                    Text("URL:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ) {
+                        Text(
+                            text = item.url,
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+
+                    // Headers
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Request Headers (${item.headers.size}):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.weight(1f))
+                        OutlinedButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Headers", headersString))
+                                Toast.makeText(context, "Copied Headers to clipboard", Toast.LENGTH_SHORT).show()
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Copy Headers", fontSize = 10.sp)
+                        }
+                    }
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ) {
+                        Text(
+                            text = if (headersString.isNotBlank()) headersString else "No custom headers",
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+
+                    // Body
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Request Body / Payload:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.weight(1f))
+                        OutlinedButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Body", item.body))
+                                Toast.makeText(context, "Copied Body to clipboard", Toast.LENGTH_SHORT).show()
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Copy Body", fontSize = 10.sp)
+                        }
+                    }
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ) {
+                        Text(
+                            text = if (item.body.isNotBlank()) item.body else "(Empty / GET Request Body)",
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("URL", item.url))
+                            Toast.makeText(context, "Copied URL", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Text("Copy URL")
+                    }
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            val fullText = "URL: ${item.url}\n\nHeaders:\n$headersString\n\nBody:\n${item.body}"
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Full Request", fullText))
+                            Toast.makeText(context, "Copied Full Request", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Text("Copy All")
                     }
                 }
             }
@@ -336,7 +494,7 @@ fun DevToolsConsoleSheet(
 private fun HttpRequestRow(
     item: HttpRequestItem,
     timeFormat: SimpleDateFormat,
-    onCopyUrl: () -> Unit
+    onClick: () -> Unit
 ) {
     val methodColor = when (item.method) {
         "GET" -> Color(0xFF10B981)
@@ -349,7 +507,7 @@ private fun HttpRequestRow(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onCopyUrl),
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
     ) {
@@ -386,7 +544,7 @@ private fun HttpRequestRow(
                     text = item.url,
                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontSize = 10.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
@@ -398,15 +556,6 @@ private fun HttpRequestRow(
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-
-            IconButton(onClick = onCopyUrl, modifier = Modifier.size(28.dp)) {
-                Icon(
-                    imageVector = Icons.Default.ContentCopy,
-                    contentDescription = "Copy",
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
     }
 }
@@ -451,7 +600,7 @@ private fun ConsoleLogRow(
                     fontSize = 10.sp
                 ),
                 color = levelColor,
-                modifier = Modifier
+                modifier = /******/ Modifier
                     .clip(RoundedCornerShape(4.dp))
                     .background(levelColor.copy(alpha = 0.15f))
                     .padding(horizontal = 4.dp, vertical = 2.dp)

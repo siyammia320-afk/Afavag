@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Launch
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
@@ -80,20 +81,20 @@ import com.example.data.model.ExtensionEntity
 @Composable
 fun ExtensionsScreen(
     extensions: List<ExtensionEntity>,
-    onToggleExtension: (id: String, isEnabled: Boolean) -> Unit,
+    onToggleExtension: (String, Boolean) -> Unit,
     onDeleteExtension: (ExtensionEntity) -> Unit,
     onImportZip: (Uri) -> Unit,
-    onCreateCustomExtension: (name: String, desc: String, match: String, js: String, css: String, popup: String?) -> Unit,
+    onCreateCustomExtension: (String, String, String, String, String, String?) -> Unit,
     onOpenPopup: (ExtensionEntity) -> Unit,
     onOpenEditor: (ExtensionEntity) -> Unit,
+    onRunTest: (ExtensionEntity) -> Unit,
     onRestoreSampleGallery: () -> Unit,
     onNavigateBack: () -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
-
     val zipPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
         if (uri != null) {
             onImportZip(uri)
         }
@@ -102,30 +103,15 @@ fun ExtensionsScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = {
-                    Text(
-                        text = "Extensions & Scripts",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                    )
-                },
+                title = { Text("Extensions & UserScripts", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = onRestoreSampleGallery,
-                        modifier = Modifier.testTag("btn_restore_samples")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Reload Sample Extensions",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    IconButton(onClick = onRestoreSampleGallery) {
+                        Icon(imageVector = Icons.Default.Refresh, contentDescription = "Reset/Clear")
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -136,12 +122,10 @@ fun ExtensionsScreen(
         floatingActionButton = {
             if (selectedTab == 0) {
                 ExtendedFloatingActionButton(
-                    onClick = { zipPickerLauncher.launch("*/*") },
-                    icon = { Icon(Icons.Default.FileUpload, contentDescription = null) },
-                    text = { Text("Upload ZIP Extension") },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.navigationBarsPadding().testTag("fab_import_zip")
+                    onClick = { zipPickerLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*")) },
+                    icon = { Icon(imageVector = Icons.Default.FileUpload, contentDescription = null) },
+                    text = { Text("Upload ZIP") },
+                    containerColor = MaterialTheme.colorScheme.primary
                 )
             }
         }
@@ -175,7 +159,8 @@ fun ExtensionsScreen(
                         onDelete = onDeleteExtension,
                         onOpenPopup = onOpenPopup,
                         onOpenEditor = onOpenEditor,
-                        onImportZipClick = { zipPickerLauncher.launch("*/*") }
+                        onRunTest = onRunTest,
+                        onImportZipClick = { zipPickerLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*")) }
                     )
                 }
                 1 -> {
@@ -198,6 +183,7 @@ private fun InstalledExtensionsTab(
     onDelete: (ExtensionEntity) -> Unit,
     onOpenPopup: (ExtensionEntity) -> Unit,
     onOpenEditor: (ExtensionEntity) -> Unit,
+    onRunTest: (ExtensionEntity) -> Unit,
     onImportZipClick: () -> Unit
 ) {
     if (extensions.isEmpty()) {
@@ -247,7 +233,8 @@ private fun InstalledExtensionsTab(
                     onToggle = { onToggle(ext.id, it) },
                     onDelete = { onDelete(ext) },
                     onOpenPopup = { onOpenPopup(ext) },
-                    onOpenEditor = { onOpenEditor(ext) }
+                    onOpenEditor = { onOpenEditor(ext) },
+                    onRunTest = { onRunTest(ext) }
                 )
             }
             item {
@@ -263,7 +250,8 @@ private fun ExtensionCard(
     onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit,
     onOpenPopup: () -> Unit,
-    onOpenEditor: () -> Unit
+    onOpenEditor: () -> Unit,
+    onRunTest: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -372,24 +360,35 @@ private fun ExtensionCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Run Test / Open Browser button
+                Button(
+                    onClick = onRunTest,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Run", fontSize = 12.sp)
+                }
+
                 if (extension.popupRelativePath != null) {
                     OutlinedButton(
                         onClick = onOpenPopup,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                     ) {
                         Icon(imageVector = Icons.Default.Launch, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Popup UI", fontSize = 12.sp)
+                        Text("Popup", fontSize = 12.sp)
                     }
                 }
 
                 OutlinedButton(
                     onClick = onOpenEditor,
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                 ) {
                     Icon(imageVector = Icons.Default.Code, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("View Code", fontSize = 12.sp)
+                    Text("Code", fontSize = 12.sp)
                 }
 
                 Spacer(modifier = Modifier.weight(1f))
@@ -422,7 +421,6 @@ private fun CreateCustomExtensionTab(
             // UserScript Content Script
             console.log('[CustomScript] Executing on: ' + window.location.href);
             
-            // Example: Add a custom floating watermark
             const note = document.createElement('div');
             note.innerText = '⚡ Custom Script Running';
             note.style.cssText = 'position:fixed;top:10px;right:10px;background:#4f46e5;color:#fff;padding:4px 8px;border-radius:4px;font-size:11px;z-index:999999;';
@@ -434,7 +432,6 @@ private fun CreateCustomExtensionTab(
         mutableStateOf(
             """
             /* Custom CSS Injection */
-            /* a:hover { color: #f59e0b !important; } */
             """.trimIndent()
         )
     }
@@ -455,77 +452,74 @@ private fun CreateCustomExtensionTab(
             value = name,
             onValueChange = { name = it },
             label = { Text("Extension Name") },
-            placeholder = { Text("e.g. My Website Tweaks") },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp)
         )
 
         OutlinedTextField(
             value = description,
             onValueChange = { description = it },
             label = { Text("Description") },
-            placeholder = { Text("e.g. Injects custom styling and analytics helper") },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp)
         )
 
         OutlinedTextField(
             value = matchPattern,
             onValueChange = { matchPattern = it },
-            label = { Text("URL Match Pattern") },
-            placeholder = { Text("<all_urls> or *://*.example.com/*") },
+            label = { Text("Match Pattern (e.g. *://*.google.com/* or <all_urls>)") },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp),
+            textStyle = TextStyle(fontFamily = FontFamily.Monospace)
         )
 
         Text(
-            text = "JavaScript Code (content.js):",
-            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
+            text = "Content Script (JavaScript)",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold
         )
+
         OutlinedTextField(
             value = jsCode,
             onValueChange = { jsCode = it },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(160.dp),
+                .height(180.dp),
+            shape = RoundedCornerShape(12.dp),
             textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         )
 
         Text(
-            text = "CSS Stylesheet (style.css):",
-            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
+            text = "Styles (CSS - Optional)",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold
         )
+
         OutlinedTextField(
             value = cssCode,
             onValueChange = { cssCode = it },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(100.dp),
-            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            shape = RoundedCornerShape(12.dp),
+            textStyle = TextStyle(fontFamily = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp).fontFamily, fontSize = 12.sp)
         )
 
         Button(
-            onClick = {
-                onCreate(
-                    name.ifBlank { "Custom Script" },
-                    description.ifBlank { "User created extension" },
-                    matchPattern.ifBlank { "<all_urls>" },
-                    jsCode,
-                    cssCode,
-                    null
-                )
-            },
+            onClick = { onCreate(name, description, matchPattern, jsCode, cssCode, null) },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(50.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            shape = RoundedCornerShape(12.dp)
         ) {
-            Icon(Icons.Default.Add, contentDescription = null)
+            Icon(imageVector = Icons.Default.Add, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Install Extension to Browser")
+            Text("Create Extension", fontWeight = FontWeight.Bold)
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(40.dp))
     }
 }

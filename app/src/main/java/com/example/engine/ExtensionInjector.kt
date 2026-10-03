@@ -8,10 +8,6 @@ import java.io.File
 
 object ExtensionInjector {
 
-    /**
-     * Builds the Chrome WebExtension compatibility layer, console interceptor,
-     * and network HTTP request capture hook.
-     */
     fun buildPolyfillScript(): String {
         return """
             (function() {
@@ -50,15 +46,20 @@ object ExtensionInjector {
                     } catch(e) {}
                 };
 
-                // HTTP Fetch & XHR Network Logger Interceptor
+                // HTTP Fetch & XHR Network Logger Interceptor with Headers & Body capture
                 try {
                     const origFetch = window.fetch;
                     window.fetch = async function(...args) {
                         const url = (typeof args[0] === 'string') ? args[0] : (args[0] && args[0].url) || 'unknown';
                         const options = args[1] || {};
                         const method = (options.method || 'GET').toUpperCase();
+                        const headersObj = options.headers || {};
+                        let headersStr = '{}';
+                        try { headersStr = JSON.stringify(headersObj); } catch(e) {}
+                        const bodyStr = options.body ? (typeof options.body === 'string' ? options.body : JSON.stringify(options.body)) : '';
+
                         if (window.ExtenNativeBridge) {
-                            window.ExtenNativeBridge.postNetworkRequest(method, url, JSON.stringify(options.headers || {}));
+                            window.ExtenNativeBridge.postNetworkRequest(method, url, headersStr, bodyStr);
                         }
                         try {
                             const resp = await origFetch.apply(this, args);
@@ -79,11 +80,22 @@ object ExtensionInjector {
                     XMLHttpRequest.prototype.open = function(method, url) {
                         this._reqMethod = method;
                         this._reqUrl = url;
+                        this._reqHeaders = {};
                         return origXhrOpen.apply(this, arguments);
                     };
+                    const origXhrSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+                    XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
+                        if (!this._reqHeaders) this._reqHeaders = {};
+                        this._reqHeaders[header] = value;
+                        return origXhrSetHeader.apply(this, arguments);
+                    };
                     XMLHttpRequest.prototype.send = function(body) {
+                        const bodyStr = body ? (typeof body === 'string' ? body : String(body)) : '';
+                        let headersStr = '{}';
+                        try { headersStr = JSON.stringify(this._reqHeaders || {}); } catch(e) {}
+
                         if (window.ExtenNativeBridge && this._reqUrl) {
-                            window.ExtenNativeBridge.postNetworkRequest(this._reqMethod || 'GET', this._reqUrl, '');
+                            window.ExtenNativeBridge.postNetworkRequest(this._reqMethod || 'GET', this._reqUrl, headersStr, bodyStr);
                         }
                         this.addEventListener('load', function() {
                             if (window.ExtenNativeBridge) {
@@ -161,9 +173,6 @@ object ExtensionInjector {
         """.trimIndent()
     }
 
-    /**
-     * Injects matching CSS and JS files for an extension on a web page.
-     */
     fun injectExtension(webView: WebView, extension: ExtensionEntity, currentUrl: String) {
         val rootDir = File(extension.installPath)
         if (!rootDir.exists()) return
@@ -175,7 +184,6 @@ object ExtensionInjector {
                 continue
             }
 
-            // 1. Inject CSS files
             for (cssFileName in config.cssFiles) {
                 val cssFile = File(rootDir, cssFileName)
                 if (cssFile.exists()) {
@@ -184,7 +192,6 @@ object ExtensionInjector {
                 }
             }
 
-            // 2. Inject JS files
             for (jsFileName in config.jsFiles) {
                 val jsFile = File(rootDir, jsFileName)
                 if (jsFile.exists()) {

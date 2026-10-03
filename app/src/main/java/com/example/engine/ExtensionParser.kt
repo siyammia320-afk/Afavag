@@ -11,13 +11,14 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.UUID
 import java.util.zip.ZipEntry
+import java.util.zip.ZipException
 import java.util.zip.ZipInputStream
 
 object ExtensionParser {
 
     /**
      * Unzips an extension from a given InputStream into an internal storage directory
-     * and extracts manifest information.
+     * and extracts manifest information with robust ZipException handling.
      */
     fun installFromZip(context: Context, inputStream: InputStream, customName: String? = null): ExtensionEntity {
         val extensionId = UUID.randomUUID().toString()
@@ -27,32 +28,40 @@ object ExtensionParser {
         val targetDir = File(extensionsDir, extensionId)
         if (!targetDir.exists()) targetDir.mkdirs()
 
-        // Safely extract ZIP contents (guarding against Zip Slip vulnerability)
         val canonicalDestDirPath = targetDir.canonicalPath
-        ZipInputStream(inputStream).use { zis ->
-            var entry: ZipEntry? = zis.nextEntry
-            while (entry != null) {
-                // Ignore macOS metadata folder or root directory entries
-                val entryName = entry.name.replace("\\", "/")
-                if (!entryName.contains("__MACOSX") && !entryName.startsWith(".")) {
-                    val destFile = File(targetDir, entryName)
-                    val canonicalDestFile = destFile.canonicalPath
-                    if (!canonicalDestFile.startsWith(canonicalDestDirPath + File.separator) && canonicalDestFile != canonicalDestDirPath) {
-                        throw SecurityException("Zip entry is outside target dir: $entryName")
-                    }
-
-                    if (entry.isDirectory) {
-                        destFile.mkdirs()
-                    } else {
-                        destFile.parentFile?.mkdirs()
-                        FileOutputStream(destFile).use { fos ->
-                            zis.copyTo(fos)
+        try {
+            ZipInputStream(inputStream).use { zis ->
+                var entry: ZipEntry? = try { zis.nextEntry } catch (e: Exception) { null }
+                while (entry != null) {
+                    try {
+                        val entryName = entry.name.replace("\\", "/")
+                        if (!entryName.contains("__MACOSX") && !entryName.startsWith(".")) {
+                            val destFile = File(targetDir, entryName)
+                            val canonicalDestFile = destFile.canonicalPath
+                            if (canonicalDestFile.startsWith(canonicalDestDirPath + File.separator) || canonicalDestFile == canonicalDestDirPath) {
+                                if (entry.isDirectory) {
+                                    destFile.mkdirs()
+                                } else {
+                                    destFile.parentFile?.mkdirs()
+                                    FileOutputStream(destFile).use { fos ->
+                                        zis.copyTo(fos)
+                                    }
+                                }
+                            }
                         }
+                    } catch (e: Exception) {
+                        // Skip corrupted/invalid entry safely
                     }
+                    try {
+                        zis.closeEntry()
+                    } catch (e: Exception) {}
+                    entry = try { zis.nextEntry } catch (e: Exception) { null }
                 }
-                zis.closeEntry()
-                entry = zis.nextEntry
             }
+        } catch (e: ZipException) {
+            throw IllegalArgumentException("Invalid or corrupted ZIP archive (invalid stored block lengths)", e)
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Failed to extract archive: ${e.localizedMessage}", e)
         }
 
         // Find manifest.json (could be in root or a single nested root folder)
@@ -60,7 +69,6 @@ object ExtensionParser {
         var effectiveRootDir = targetDir
 
         if (!manifestFile.exists()) {
-            // Check subdirectories if zipped with a root folder
             val subFiles = targetDir.listFiles()
             if (subFiles != null && subFiles.size == 1 && subFiles[0].isDirectory) {
                 val nestedManifest = File(subFiles[0], "manifest.json")
@@ -83,11 +91,14 @@ object ExtensionParser {
         }
 
         if (!manifestFile.exists()) {
-            // Auto-generate a basic manifest if user zipped plain .js / .css files
             return generateFallbackExtension(context, effectiveRootDir, extensionId, customName)
         }
 
-        val manifestJson = manifestFile.readText()
+        val manifestJson = try {
+            manifestFile.readText()
+        } catch (e: Exception) {
+            "{}"
+        }
         return parseManifest(effectiveRootDir, extensionId, manifestJson, customName)
     }
 
@@ -97,24 +108,24 @@ object ExtensionParser {
         manifestJson: String,
         overrideName: String? = null
     ): ExtensionEntity {
-        val json = JSONObject(manifestJson)
+        val json = try { JSONObject(manifestJson) } catch (e: Exception) { JSONObject() }
         val manifestVersion = json.optInt("manifest_version", 3)
         val name = overrideName ?: json.optString("name", "Untitled Extension")
         val version = json.optString("version", "1.0.0")
         val description = json.optString("description", "Imported Web Extension")
         val author = json.optString("author", "WebExtension Developer")
 
-        // Parse content scripts
         val contentScriptsList = mutableListOf<ContentScriptConfig>()
         val contentScriptsArray = json.optJSONArray("content_scripts")
         if (contentScriptsArray != null) {
             for (i in 0 until contentScriptsArray.length()) {
-                val scriptObj = contentScriptsArray.getJSONObject(i)
-                contentScriptsList.add(ContentScriptConfig.fromJson(scriptObj))
+                try {
+                    val scriptObj = contentScriptsArray.getJSONObject(i)
+                    contentScriptsList.add(ContentScriptConfig.fromJson(scriptObj))
+                } catch (e: Exception) {}
             }
         }
 
-        // Parse popup (browser_action or action)
         var popupPath: String? = null
         if (json.has("action")) {
             val actionObj = json.optJSONObject("action")
@@ -125,7 +136,6 @@ object ExtensionParser {
             popupPath = browserActionObj?.optString("default_popup", null)
         }
 
-        // Parse icon
         var iconPath: String? = null
         val iconsObj = json.optJSONObject("icons")
         if (iconsObj != null) {
@@ -164,17 +174,18 @@ object ExtensionParser {
         extensionId: String,
         customName: String?
     ): ExtensionEntity {
-        // Collect any .js and .css files found
         val jsFiles = mutableListOf<String>()
         val cssFiles = mutableListOf<String>()
-        rootDir.walkTopDown().filter { it.isFile }.forEach { file ->
-            val relPath = file.relativeTo(rootDir).path
-            if (file.extension.equals("js", ignoreCase = true)) {
-                jsFiles.add(relPath)
-            } else if (file.extension.equals("css", ignoreCase = true)) {
-                cssFiles.add(relPath)
+        try {
+            rootDir.walkTopDown().filter { it.isFile }.forEach { file ->
+                val relPath = file.relativeTo(rootDir).path
+                if (file.extension.equals("js", ignoreCase = true)) {
+                    jsFiles.add(relPath)
+                } else if (file.extension.equals("css", ignoreCase = true)) {
+                    cssFiles.add(relPath)
+                }
             }
-        }
+        } catch (e: Exception) {}
 
         val contentScripts = listOf(
             ContentScriptConfig(
@@ -185,13 +196,14 @@ object ExtensionParser {
             )
         )
 
-        // Write a synthesized manifest.json
         val manifestObj = JSONObject()
-        manifestObj.put("manifest_version", 3)
-        manifestObj.put("name", customName ?: "Imported Script Package")
-        manifestObj.put("version", "1.0.0")
-        manifestObj.put("description", "Auto-generated manifest from uploaded files")
-        File(rootDir, "manifest.json").writeText(manifestObj.toString(2))
+        try {
+            manifestObj.put("manifest_version", 3)
+            manifestObj.put("name", customName ?: "Imported Script Package")
+            manifestObj.put("version", "1.0.0")
+            manifestObj.put("description", "Auto-generated manifest from uploaded files")
+            File(rootDir, "manifest.json").writeText(manifestObj.toString(2))
+        } catch (e: Exception) {}
 
         return ExtensionEntity(
             id = extensionId,
@@ -210,9 +222,6 @@ object ExtensionParser {
         )
     }
 
-    /**
-     * Creates a new custom extension from scratch.
-     */
     fun createCustomExtension(
         context: Context,
         name: String,

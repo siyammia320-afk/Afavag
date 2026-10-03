@@ -9,6 +9,7 @@ import android.widget.Toast
 import com.example.data.model.ConsoleLogItem
 import com.example.data.model.HttpRequestItem
 import com.example.data.model.LogLevel
+import org.json.JSONObject
 
 class WebExtensionBridge(
     private val context: Context,
@@ -36,11 +37,22 @@ class WebExtensionBridge(
     }
 
     @JavascriptInterface
-    fun postNetworkRequest(method: String, url: String, headersJson: String) {
+    fun postNetworkRequest(method: String, url: String, headersJson: String, body: String) {
+        val headersMap = mutableMapOf<String, String>()
+        try {
+            val json = JSONObject(headersJson)
+            val keys = json.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                headersMap[k] = json.optString(k, "")
+            }
+        } catch (e: Exception) {}
+
         val item = HttpRequestItem(
             url = url,
             method = method.uppercase(),
-            headers = emptyMap(),
+            headers = headersMap,
+            body = body,
             isForMainFrame = false
         )
         onHttpRequestCaptured(item)

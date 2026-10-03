@@ -7,6 +7,7 @@ data class HttpRequestItem(
     val url: String,
     val method: String = "GET",
     val headers: Map<String, String> = emptyMap(),
+    val body: String = "",
     val timestamp: Long = System.currentTimeMillis(),
     val isForMainFrame: Boolean = false,
     val host: String = try {

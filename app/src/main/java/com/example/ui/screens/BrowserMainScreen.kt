@@ -205,6 +205,11 @@ fun BrowserMainScreen(
                             onOpenEditor = { ext ->
                                 viewModel.openExtensionEditor(ext)
                             },
+                            onRunTest = { ext ->
+                                viewModel.toggleExtension(ext.id, true)
+                                currentScreen = CurrentScreen.BROWSER
+                                activeWebView?.reload()
+                            },
                             onRestoreSampleGallery = {
                                 viewModel.clearAllSampleExtensions()
                             },
@@ -255,7 +260,7 @@ fun BrowserMainScreen(
                 )
             }
 
-            // Extension Action Popup Dialog (Full mobile responsive height)
+            // Extension Action Popup Dialog
             activePopupExtension?.let { ext ->
                 ExtensionPopupDialog(
                     extension = ext,
